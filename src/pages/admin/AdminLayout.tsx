@@ -13,7 +13,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { NavLink } from "@/components/NavLink";
-import { Building2, MapPin, Route, Ticket, LayoutDashboard, ArrowLeft } from "lucide-react";
+import { Building2, MapPin, Route, Ticket, LayoutDashboard, ArrowLeft, ScanLine, UserCog } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const adminItems = [
@@ -22,6 +22,8 @@ const adminItems = [
   { title: "Villes", url: "/admin/cities", icon: MapPin },
   { title: "Trajets", url: "/admin/routes", icon: Route },
   { title: "Réservations", url: "/admin/reservations", icon: Ticket },
+  { title: "Scanner QR", url: "/admin/scan", icon: ScanLine },
+  { title: "Gérants", url: "/admin/managers", icon: UserCog },
 ];
 
 const AdminLayout = () => {

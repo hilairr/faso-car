@@ -16,6 +16,12 @@ import AdminCompanies from "./pages/admin/AdminCompanies.tsx";
 import AdminCities from "./pages/admin/AdminCities.tsx";
 import AdminRoutes from "./pages/admin/AdminRoutes.tsx";
 import AdminReservations from "./pages/admin/AdminReservations.tsx";
+import AdminScanQR from "./pages/admin/AdminScanQR.tsx";
+import AdminManagers from "./pages/admin/AdminManagers.tsx";
+import ManagerLayout from "./pages/manager/ManagerLayout.tsx";
+import ManagerDashboard from "./pages/manager/ManagerDashboard.tsx";
+import ManagerRoutes from "./pages/manager/ManagerRoutes.tsx";
+import ManagerTickets from "./pages/manager/ManagerTickets.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -40,6 +46,13 @@ const App = () => (
               <Route path="cities" element={<AdminCities />} />
               <Route path="routes" element={<AdminRoutes />} />
               <Route path="reservations" element={<AdminReservations />} />
+              <Route path="scan" element={<AdminScanQR />} />
+              <Route path="managers" element={<AdminManagers />} />
+            </Route>
+            <Route path="/manager" element={<ManagerLayout />}>
+              <Route index element={<ManagerDashboard />} />
+              <Route path="routes" element={<ManagerRoutes />} />
+              <Route path="tickets" element={<ManagerTickets />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
