@@ -24,7 +24,7 @@ const AdminReservations = () => {
 
   useEffect(() => { fetchReservations(); }, []);
 
-  const updateStatus = async (id: string, status: string) => {
+  const updateStatus = async (id: string, status: "en_attente" | "paye" | "annule") => {
     const { error } = await supabase.from("reservations").update({ status }).eq("id", id);
     if (error) {
       toast({ title: "Erreur", description: error.message, variant: "destructive" });
