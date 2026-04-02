@@ -4,17 +4,35 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { toast } from "@/hooks/use-toast";
+import { MoreHorizontal, CheckCircle, Clock, XCircle } from "lucide-react";
 
 const AdminReservations = () => {
   const [reservations, setReservations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    supabase
+  const fetchReservations = async () => {
+    const { data } = await supabase
       .from("reservations")
       .select("*, route:routes(departure_time, company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name)), ticket:tickets(ticket_number)")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => { if (data) setReservations(data); });
-  }, []);
+      .order("created_at", { ascending: false });
+    if (data) setReservations(data);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchReservations(); }, []);
+
+  const updateStatus = async (id: string, status: "en_attente" | "paye" | "annule") => {
+    const { error } = await supabase.from("reservations").update({ status }).eq("id", id);
+    if (error) {
+      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Statut mis à jour", description: `Réservation marquée comme "${status === "paye" ? "Payée" : status === "annule" ? "Annulée" : "En attente"}"` });
+      fetchReservations();
+    }
+  };
 
   const statusBadge = (s: string) => {
     switch (s) {
@@ -42,6 +60,7 @@ const AdminReservations = () => {
               <TableHead>Total</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead>Ticket</TableHead>
+              <TableHead className="w-[50px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -58,10 +77,36 @@ const AdminReservations = () => {
                 <TableCell className="font-medium">{r.total_price?.toLocaleString()} FCFA</TableCell>
                 <TableCell>{statusBadge(r.status)}</TableCell>
                 <TableCell className="text-xs font-mono">{r.ticket?.ticket_number || "—"}</TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {r.status !== "paye" && (
+                        <DropdownMenuItem onClick={() => updateStatus(r.id, "paye")} className="text-primary">
+                          <CheckCircle className="mr-2 h-4 w-4" /> Marquer payé
+                        </DropdownMenuItem>
+                      )}
+                      {r.status !== "en_attente" && (
+                        <DropdownMenuItem onClick={() => updateStatus(r.id, "en_attente")}>
+                          <Clock className="mr-2 h-4 w-4" /> Mettre en attente
+                        </DropdownMenuItem>
+                      )}
+                      {r.status !== "annule" && (
+                        <DropdownMenuItem onClick={() => updateStatus(r.id, "annule")} className="text-destructive">
+                          <XCircle className="mr-2 h-4 w-4" /> Annuler
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
               </TableRow>
             ))}
             {items.length === 0 && (
-              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Aucune réservation</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Aucune réservation</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
