@@ -3,11 +3,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Building2, MapPin, Route, Ticket, CreditCard, TrendingUp, Users, Clock } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+
+const COLORS = ["hsl(var(--primary))", "hsl(var(--accent))", "#f59e0b", "#10b981", "#8b5cf6", "#ef4444"];
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({ companies: 0, cities: 0, routes: 0, reservations: 0, paid: 0, pending: 0, cancelled: 0, revenue: 0 });
   const [recentReservations, setRecentReservations] = useState<any[]>([]);
   const [topRoutes, setTopRoutes] = useState<any[]>([]);
+  const [revenueByCompany, setRevenueByCompany] = useState<any[]>([]);
+  const [monthlyRevenue, setMonthlyRevenue] = useState<any[]>([]);
+  const [statusDistribution, setStatusDistribution] = useState<any[]>([]);
 
   useEffect(() => {
     // Load stats
@@ -22,16 +28,18 @@ const AdminDashboard = () => {
       supabase.from("reservations").select("total_price").eq("status", "paye"),
     ]).then(([c, ci, r, res, paid, pending, cancelled, revenueData]) => {
       const revenue = (revenueData.data || []).reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
+      const paidCount = paid.count || 0;
+      const pendingCount = pending.count || 0;
+      const cancelledCount = cancelled.count || 0;
       setStats({
-        companies: c.count || 0,
-        cities: ci.count || 0,
-        routes: r.count || 0,
-        reservations: res.count || 0,
-        paid: paid.count || 0,
-        pending: pending.count || 0,
-        cancelled: cancelled.count || 0,
-        revenue,
+        companies: c.count || 0, cities: ci.count || 0, routes: r.count || 0,
+        reservations: res.count || 0, paid: paidCount, pending: pendingCount, cancelled: cancelledCount, revenue,
       });
+      setStatusDistribution([
+        { name: "Payées", value: paidCount, color: "hsl(var(--primary))" },
+        { name: "En attente", value: pendingCount, color: "#f59e0b" },
+        { name: "Annulées", value: cancelledCount, color: "#ef4444" },
+      ].filter(d => d.value > 0));
     });
 
     // Recent reservations
@@ -42,20 +50,40 @@ const AdminDashboard = () => {
       .limit(5)
       .then(({ data }) => { if (data) setRecentReservations(data); });
 
-    // Top routes by reservation count
+    // Revenue by company & monthly + top routes
     supabase
       .from("reservations")
-      .select("route_id, route:routes(company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name))")
-      .eq("status", "paye")
+      .select("route_id, total_price, status, created_at, route:routes(company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name))")
       .then(({ data }) => {
         if (!data) return;
+
+        // Revenue by company (paid only)
+        const companyMap: Record<string, number> = {};
+        const monthMap: Record<string, number> = {};
         const routeMap: Record<string, { count: number; route: any }> = {};
+
         data.forEach((r: any) => {
-          if (!routeMap[r.route_id]) routeMap[r.route_id] = { count: 0, route: r.route };
-          routeMap[r.route_id].count++;
+          if (r.status === "paye") {
+            const name = r.route?.company?.name || "Inconnu";
+            companyMap[name] = (companyMap[name] || 0) + (r.total_price || 0);
+
+            const month = new Date(r.created_at).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" });
+            monthMap[month] = (monthMap[month] || 0) + (r.total_price || 0);
+
+            if (!routeMap[r.route_id]) routeMap[r.route_id] = { count: 0, route: r.route };
+            routeMap[r.route_id].count++;
+          }
         });
-        const sorted = Object.values(routeMap).sort((a, b) => b.count - a.count).slice(0, 5);
-        setTopRoutes(sorted);
+
+        setRevenueByCompany(
+          Object.entries(companyMap).map(([name, revenue]) => ({ name, revenue })).sort((a, b) => b.revenue - a.revenue)
+        );
+        setMonthlyRevenue(
+          Object.entries(monthMap).map(([month, revenue]) => ({ month, revenue }))
+        );
+        setTopRoutes(
+          Object.values(routeMap).sort((a, b) => b.count - a.count).slice(0, 5)
+        );
       });
   }, []);
 
@@ -122,6 +150,81 @@ const AdminDashboard = () => {
           </Card>
         ))}
       </div>
+
+      {/* Charts row */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Monthly Revenue */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Revenus mensuels</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {monthlyRevenue.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-12">Aucune donnée de revenu disponible</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={monthlyRevenue}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="month" className="text-xs" />
+                  <YAxis className="text-xs" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(value: number) => [`${value.toLocaleString()} FCFA`, "Revenus"]} />
+                  <Bar dataKey="revenue" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Status Distribution */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Répartition des réservations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {statusDistribution.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-12">Aucune réservation</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={250}>
+                <PieChart>
+                  <Pie data={statusDistribution} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                    {statusDistribution.map((entry, i) => (
+                      <Cell key={i} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => [value, "Réservations"]} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Revenue by company */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Revenus par société</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {revenueByCompany.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-12">Aucune donnée disponible</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={revenueByCompany} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis type="number" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} className="text-xs" />
+                <YAxis dataKey="name" type="category" width={100} className="text-xs" />
+                <Tooltip formatter={(value: number) => [`${value.toLocaleString()} FCFA`, "Revenus"]} />
+                <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
+                  {revenueByCompany.map((_, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Recent reservations */}
