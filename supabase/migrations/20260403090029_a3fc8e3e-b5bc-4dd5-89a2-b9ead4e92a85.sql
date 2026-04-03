@@ -1,0 +1,1 @@
+ALTER PUBLICATION supabase_realtime ADD TABLE public.companies, public.cities, public.routes, public.reservations, public.tickets;
