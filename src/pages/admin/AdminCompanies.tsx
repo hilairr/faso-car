@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 
 const AdminCompanies = () => {
   const [companies, setCompanies] = useState<any[]>([]);
@@ -20,22 +21,19 @@ const AdminCompanies = () => {
   const [email, setEmail] = useState("");
   const { toast } = useToast();
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const { data } = await supabase.from("companies").select("*").order("name");
     if (data) setCompanies(data);
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
+  useRealtimeTable("companies", load);
 
   const resetForm = () => { setName(""); setDescription(""); setPhone(""); setEmail(""); setEditing(null); };
 
   const openEdit = (c: any) => {
-    setEditing(c);
-    setName(c.name);
-    setDescription(c.description || "");
-    setPhone(c.phone || "");
-    setEmail(c.email || "");
-    setOpen(true);
+    setEditing(c); setName(c.name); setDescription(c.description || "");
+    setPhone(c.phone || ""); setEmail(c.email || ""); setOpen(true);
   };
 
   const handleSave = async () => {
@@ -47,16 +45,13 @@ const AdminCompanies = () => {
       await supabase.from("companies").insert({ name, description, phone, email });
       toast({ title: "Société ajoutée" });
     }
-    resetForm();
-    setOpen(false);
-    load();
+    resetForm(); setOpen(false);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Supprimer cette société ?")) return;
     await supabase.from("companies").delete().eq("id", id);
     toast({ title: "Société supprimée" });
-    load();
   };
 
   return (
@@ -64,13 +59,9 @@ const AdminCompanies = () => {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-display font-bold">Sociétés de transport</h1>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
-          <DialogTrigger asChild>
-            <Button><Plus className="h-4 w-4 mr-1" /> Ajouter</Button>
-          </DialogTrigger>
+          <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-1" /> Ajouter</Button></DialogTrigger>
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editing ? "Modifier la société" : "Nouvelle société"}</DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>{editing ? "Modifier la société" : "Nouvelle société"}</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2"><Label>Nom</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
               <div className="space-y-2"><Label>Description</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} /></div>
@@ -81,7 +72,6 @@ const AdminCompanies = () => {
           </DialogContent>
         </Dialog>
       </div>
-
       <Card>
         <CardContent className="p-0">
           <Table>

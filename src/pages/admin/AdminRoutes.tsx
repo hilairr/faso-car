@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Pencil, Trash2 } from "lucide-react";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 
 const AdminRoutes = () => {
   const [routes, setRoutes] = useState<any[]>([]);
@@ -24,19 +25,27 @@ const AdminRoutes = () => {
   const [seats, setSeats] = useState("50");
   const { toast } = useToast();
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const { data } = await supabase
       .from("routes")
       .select("*, company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name)")
       .order("departure_time");
     if (data) setRoutes(data);
-  };
-
-  useEffect(() => {
-    load();
-    supabase.from("companies").select("id, name").order("name").then(({ data }) => { if (data) setCompanies(data); });
-    supabase.from("cities").select("id, name").order("name").then(({ data }) => { if (data) setCities(data); });
   }, []);
+
+  const loadSelects = useCallback(async () => {
+    const [{ data: comps }, { data: cits }] = await Promise.all([
+      supabase.from("companies").select("id, name").order("name"),
+      supabase.from("cities").select("id, name").order("name"),
+    ]);
+    if (comps) setCompanies(comps);
+    if (cits) setCities(cits);
+  }, []);
+
+  useEffect(() => { load(); loadSelects(); }, [load, loadSelects]);
+  useRealtimeTable("routes", load);
+  useRealtimeTable("companies", loadSelects);
+  useRealtimeTable("cities", loadSelects);
 
   const resetForm = () => {
     setCompanyId(""); setDepartureCityId(""); setArrivalCityId("");
@@ -62,13 +71,13 @@ const AdminRoutes = () => {
       await supabase.from("routes").insert(payload);
       toast({ title: "Trajet ajouté" });
     }
-    resetForm(); setOpen(false); load();
+    resetForm(); setOpen(false);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Supprimer ce trajet ?")) return;
     await supabase.from("routes").delete().eq("id", id);
-    toast({ title: "Trajet supprimé" }); load();
+    toast({ title: "Trajet supprimé" });
   };
 
   return (
@@ -111,7 +120,6 @@ const AdminRoutes = () => {
           </DialogContent>
         </Dialog>
       </div>
-
       <Card>
         <CardContent className="p-0">
           <Table>

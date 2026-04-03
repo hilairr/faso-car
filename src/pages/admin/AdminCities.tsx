@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Pencil, Trash2 } from "lucide-react";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 
 const AdminCities = () => {
   const [cities, setCities] = useState<any[]>([]);
@@ -17,15 +18,15 @@ const AdminCities = () => {
   const [region, setRegion] = useState("");
   const { toast } = useToast();
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const { data } = await supabase.from("cities").select("*").order("name");
     if (data) setCities(data);
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
+  useRealtimeTable("cities", load);
 
   const resetForm = () => { setName(""); setRegion(""); setEditing(null); };
-
   const openEdit = (c: any) => { setEditing(c); setName(c.name); setRegion(c.region || ""); setOpen(true); };
 
   const handleSave = async () => {
@@ -37,13 +38,13 @@ const AdminCities = () => {
       await supabase.from("cities").insert({ name, region });
       toast({ title: "Ville ajoutée" });
     }
-    resetForm(); setOpen(false); load();
+    resetForm(); setOpen(false);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Supprimer cette ville ?")) return;
     await supabase.from("cities").delete().eq("id", id);
-    toast({ title: "Ville supprimée" }); load();
+    toast({ title: "Ville supprimée" });
   };
 
   return (
@@ -62,7 +63,6 @@ const AdminCities = () => {
           </DialogContent>
         </Dialog>
       </div>
-
       <Card>
         <CardContent className="p-0">
           <Table>
