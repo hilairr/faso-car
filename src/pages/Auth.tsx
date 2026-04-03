@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,11 +9,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
+import { useEffect } from "react";
 
 const Auth = () => {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user, isAdmin, isManager } = useAuth();
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -22,6 +25,15 @@ const Auth = () => {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      if (isAdmin) navigate("/admin");
+      else if (isManager) navigate("/manager");
+      else navigate("/");
+    }
+  }, [user, isAdmin, isManager, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +47,7 @@ const Auth = () => {
       toast({ title: "Erreur de connexion", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Connecté avec succès !" });
-      navigate("/");
+      // Redirect handled by useEffect above
     }
   };
 
@@ -56,7 +68,6 @@ const Auth = () => {
       toast({ title: "Erreur d'inscription", description: error.message, variant: "destructive" });
       return;
     }
-    // Update profile
     if (data.user) {
       await supabase.from("profiles").update({
         first_name: firstName,

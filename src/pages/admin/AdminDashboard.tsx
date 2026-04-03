@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Building2, MapPin, Route, Ticket, CreditCard, TrendingUp, Users, Clock } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 
 const COLORS = ["hsl(var(--primary))", "hsl(var(--accent))", "#f59e0b", "#10b981", "#8b5cf6", "#ef4444"];
 
@@ -15,9 +16,8 @@ const AdminDashboard = () => {
   const [monthlyRevenue, setMonthlyRevenue] = useState<any[]>([]);
   const [statusDistribution, setStatusDistribution] = useState<any[]>([]);
 
-  useEffect(() => {
-    // Load stats
-    Promise.all([
+  const loadAll = useCallback(async () => {
+    const [c, ci, r, res, paid, pending, cancelled, revenueData] = await Promise.all([
       supabase.from("companies").select("id", { count: "exact", head: true }),
       supabase.from("cities").select("id", { count: "exact", head: true }),
       supabase.from("routes").select("id", { count: "exact", head: true }),
@@ -26,66 +26,57 @@ const AdminDashboard = () => {
       supabase.from("reservations").select("id", { count: "exact", head: true }).eq("status", "en_attente"),
       supabase.from("reservations").select("id", { count: "exact", head: true }).eq("status", "annule"),
       supabase.from("reservations").select("total_price").eq("status", "paye"),
-    ]).then(([c, ci, r, res, paid, pending, cancelled, revenueData]) => {
-      const revenue = (revenueData.data || []).reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
-      const paidCount = paid.count || 0;
-      const pendingCount = pending.count || 0;
-      const cancelledCount = cancelled.count || 0;
-      setStats({
-        companies: c.count || 0, cities: ci.count || 0, routes: r.count || 0,
-        reservations: res.count || 0, paid: paidCount, pending: pendingCount, cancelled: cancelledCount, revenue,
-      });
-      setStatusDistribution([
-        { name: "Payées", value: paidCount, color: "hsl(var(--primary))" },
-        { name: "En attente", value: pendingCount, color: "#f59e0b" },
-        { name: "Annulées", value: cancelledCount, color: "#ef4444" },
-      ].filter(d => d.value > 0));
+    ]);
+    const revenue = (revenueData.data || []).reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
+    const paidCount = paid.count || 0;
+    const pendingCount = pending.count || 0;
+    const cancelledCount = cancelled.count || 0;
+    setStats({
+      companies: c.count || 0, cities: ci.count || 0, routes: r.count || 0,
+      reservations: res.count || 0, paid: paidCount, pending: pendingCount, cancelled: cancelledCount, revenue,
     });
+    setStatusDistribution([
+      { name: "Payées", value: paidCount, color: "hsl(var(--primary))" },
+      { name: "En attente", value: pendingCount, color: "#f59e0b" },
+      { name: "Annulées", value: cancelledCount, color: "#ef4444" },
+    ].filter(d => d.value > 0));
 
     // Recent reservations
-    supabase
+    const { data: recent } = await supabase
       .from("reservations")
       .select("*, route:routes(departure_time, company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name))")
       .order("created_at", { ascending: false })
-      .limit(5)
-      .then(({ data }) => { if (data) setRecentReservations(data); });
+      .limit(5);
+    if (recent) setRecentReservations(recent);
 
-    // Revenue by company & monthly + top routes
-    supabase
+    // Revenue analytics
+    const { data: allRes } = await supabase
       .from("reservations")
-      .select("route_id, total_price, status, created_at, route:routes(company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name))")
-      .then(({ data }) => {
-        if (!data) return;
-
-        // Revenue by company (paid only)
-        const companyMap: Record<string, number> = {};
-        const monthMap: Record<string, number> = {};
-        const routeMap: Record<string, { count: number; route: any }> = {};
-
-        data.forEach((r: any) => {
-          if (r.status === "paye") {
-            const name = r.route?.company?.name || "Inconnu";
-            companyMap[name] = (companyMap[name] || 0) + (r.total_price || 0);
-
-            const month = new Date(r.created_at).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" });
-            monthMap[month] = (monthMap[month] || 0) + (r.total_price || 0);
-
-            if (!routeMap[r.route_id]) routeMap[r.route_id] = { count: 0, route: r.route };
-            routeMap[r.route_id].count++;
-          }
-        });
-
-        setRevenueByCompany(
-          Object.entries(companyMap).map(([name, revenue]) => ({ name, revenue })).sort((a, b) => b.revenue - a.revenue)
-        );
-        setMonthlyRevenue(
-          Object.entries(monthMap).map(([month, revenue]) => ({ month, revenue }))
-        );
-        setTopRoutes(
-          Object.values(routeMap).sort((a, b) => b.count - a.count).slice(0, 5)
-        );
+      .select("route_id, total_price, status, created_at, route:routes(company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name))");
+    if (allRes) {
+      const companyMap: Record<string, number> = {};
+      const monthMap: Record<string, number> = {};
+      const routeMap: Record<string, { count: number; route: any }> = {};
+      allRes.forEach((r: any) => {
+        if (r.status === "paye") {
+          const name = r.route?.company?.name || "Inconnu";
+          companyMap[name] = (companyMap[name] || 0) + (r.total_price || 0);
+          const month = new Date(r.created_at).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" });
+          monthMap[month] = (monthMap[month] || 0) + (r.total_price || 0);
+          if (!routeMap[r.route_id]) routeMap[r.route_id] = { count: 0, route: r.route };
+          routeMap[r.route_id].count++;
+        }
       });
+      setRevenueByCompany(Object.entries(companyMap).map(([name, revenue]) => ({ name, revenue })).sort((a, b) => b.revenue - a.revenue));
+      setMonthlyRevenue(Object.entries(monthMap).map(([month, revenue]) => ({ month, revenue })));
+      setTopRoutes(Object.values(routeMap).sort((a, b) => b.count - a.count).slice(0, 5));
+    }
   }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+  useRealtimeTable("reservations", loadAll);
+  useRealtimeTable("companies", loadAll);
+  useRealtimeTable("routes", loadAll);
 
   const statusBadge = (s: string) => {
     switch (s) {
@@ -116,8 +107,6 @@ const AdminDashboard = () => {
         <h1 className="text-3xl font-display font-bold">Tableau de bord</h1>
         <p className="text-muted-foreground mt-1">Vue d'ensemble de l'activité FasoCar</p>
       </div>
-
-      {/* Main KPI cards */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {mainCards.map((c) => (
           <Card key={c.label} className="border-none shadow-md">
@@ -135,8 +124,6 @@ const AdminDashboard = () => {
           </Card>
         ))}
       </div>
-
-      {/* Secondary stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {secondaryCards.map((c) => (
           <Card key={c.label}>
@@ -150,14 +137,9 @@ const AdminDashboard = () => {
           </Card>
         ))}
       </div>
-
-      {/* Charts row */}
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Monthly Revenue */}
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Revenus mensuels</CardTitle>
-          </CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-lg">Revenus mensuels</CardTitle></CardHeader>
           <CardContent>
             {monthlyRevenue.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-12">Aucune donnée de revenu disponible</p>
@@ -174,12 +156,8 @@ const AdminDashboard = () => {
             )}
           </CardContent>
         </Card>
-
-        {/* Status Distribution */}
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Répartition des réservations</CardTitle>
-          </CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-lg">Répartition des réservations</CardTitle></CardHeader>
           <CardContent>
             {statusDistribution.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-12">Aucune réservation</p>
@@ -187,9 +165,7 @@ const AdminDashboard = () => {
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
                   <Pie data={statusDistribution} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                    {statusDistribution.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
-                    ))}
+                    {statusDistribution.map((entry, i) => (<Cell key={i} fill={entry.color} />))}
                   </Pie>
                   <Tooltip formatter={(value: number) => [value, "Réservations"]} />
                   <Legend />
@@ -199,12 +175,8 @@ const AdminDashboard = () => {
           </CardContent>
         </Card>
       </div>
-
-      {/* Revenue by company */}
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg">Revenus par société</CardTitle>
-        </CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-lg">Revenus par société</CardTitle></CardHeader>
         <CardContent>
           {revenueByCompany.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-12">Aucune donnée disponible</p>
@@ -216,27 +188,19 @@ const AdminDashboard = () => {
                 <YAxis dataKey="name" type="category" width={100} className="text-xs" />
                 <Tooltip formatter={(value: number) => [`${value.toLocaleString()} FCFA`, "Revenus"]} />
                 <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
-                  {revenueByCompany.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
+                  {revenueByCompany.map((_, i) => (<Cell key={i} fill={COLORS[i % COLORS.length]} />))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           )}
         </CardContent>
       </Card>
-
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Recent reservations */}
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Réservations récentes</CardTitle>
-          </CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-lg">Réservations récentes</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {recentReservations.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">Aucune réservation</p>
-              )}
+              {recentReservations.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Aucune réservation</p>}
               {recentReservations.map((r) => (
                 <div key={r.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                   <div className="space-y-1">
@@ -255,27 +219,17 @@ const AdminDashboard = () => {
             </div>
           </CardContent>
         </Card>
-
-        {/* Top routes */}
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Trajets populaires</CardTitle>
-          </CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-lg">Trajets populaires</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {topRoutes.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">Aucune donnée disponible</p>
-              )}
+              {topRoutes.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Aucune donnée disponible</p>}
               {topRoutes.map((item, i) => (
                 <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                   <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">
-                      {i + 1}
-                    </div>
+                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">{i + 1}</div>
                     <div>
-                      <p className="text-sm font-medium">
-                        {item.route?.departure_city?.name} → {item.route?.arrival_city?.name}
-                      </p>
+                      <p className="text-sm font-medium">{item.route?.departure_city?.name} → {item.route?.arrival_city?.name}</p>
                       <p className="text-xs text-muted-foreground">{item.route?.company?.name}</p>
                     </div>
                   </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -8,29 +8,30 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "@/hooks/use-toast";
 import { MoreHorizontal, CheckCircle, Clock, XCircle } from "lucide-react";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 
 const AdminReservations = () => {
   const [reservations, setReservations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchReservations = async () => {
+  const fetchReservations = useCallback(async () => {
     const { data } = await supabase
       .from("reservations")
       .select("*, route:routes(departure_time, company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name)), ticket:tickets(ticket_number)")
       .order("created_at", { ascending: false });
     if (data) setReservations(data);
     setLoading(false);
-  };
+  }, []);
 
-  useEffect(() => { fetchReservations(); }, []);
+  useEffect(() => { fetchReservations(); }, [fetchReservations]);
+  useRealtimeTable("reservations", fetchReservations);
 
   const updateStatus = async (id: string, status: "en_attente" | "paye" | "annule") => {
     const { error } = await supabase.from("reservations").update({ status }).eq("id", id);
     if (error) {
       toast({ title: "Erreur", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Statut mis à jour", description: `Réservation marquée comme "${status === "paye" ? "Payée" : status === "annule" ? "Annulée" : "En attente"}"` });
-      fetchReservations();
+      toast({ title: "Statut mis à jour" });
     }
   };
 
