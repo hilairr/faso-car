@@ -50,32 +50,14 @@ const AdminManagers = () => {
     setLoading(true);
 
     try {
-      // Use Supabase admin invite (will send magic link email)
-      // Since we can't use admin API from client, we sign up the user with a random password
-      // and they'll use password reset to set their own
-      const tempPassword = crypto.randomUUID() + "Aa1!";
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password: tempPassword,
-        options: {
-          data: { invited_as: "manager" },
-        },
+      const { data, error } = await supabase.functions.invoke("invite-manager", {
+        body: { email: email.trim(), company_id: companyId },
       });
 
-      if (signUpError) {
-        // User might already exist
-        toast({ title: "Erreur", description: signUpError.message, variant: "destructive" });
-        setLoading(false);
-        return;
-      }
-
-      if (signUpData.user) {
-        // Assign manager role
-        await supabase.from("user_roles").insert({ user_id: signUpData.user.id, role: "manager" as any });
-        // Link to company
-        await supabase.from("company_managers").insert({ user_id: signUpData.user.id, company_id: companyId });
-
-        toast({ title: "Gérant invité", description: `Un email a été envoyé à ${email}` });
+      if (error) {
+        toast({ title: "Erreur", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Gérant ajouté", description: data.message });
         setEmail("");
         setCompanyId("");
         setOpen(false);
