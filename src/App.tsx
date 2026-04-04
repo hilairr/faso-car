@@ -22,6 +22,7 @@ import ManagerLayout from "./pages/manager/ManagerLayout.tsx";
 import ManagerDashboard from "./pages/manager/ManagerDashboard.tsx";
 import ManagerRoutes from "./pages/manager/ManagerRoutes.tsx";
 import ManagerTickets from "./pages/manager/ManagerTickets.tsx";
+import ManagerScanQR from "./pages/manager/ManagerScanQR.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
