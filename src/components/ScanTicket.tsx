@@ -197,12 +197,12 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
 
         {/* Already used */}
         {status === "used" && result && (
-          <Card className="border-orange-500">
+          <Card className="border-warning">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3 mb-4">
-                <AlertTriangle className="h-8 w-8 text-orange-500" />
+                <AlertTriangle className="h-8 w-8 text-warning" />
                 <div>
-                  <p className="font-semibold text-orange-600 text-lg">Ticket déjà utilisé</p>
+                  <p className="font-semibold text-warning text-lg">Ticket déjà utilisé</p>
                   <p className="text-sm text-muted-foreground">
                     Ce ticket a déjà été scanné le {new Date((result as any).used_at).toLocaleString("fr-FR")}.
                   </p>
