@@ -5,14 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Bus, Clock, MapPin, ArrowRight, Banknote } from "lucide-react";
+import { Bus, Clock, MapPin, ArrowRight, Banknote, Loader2 } from "lucide-react";
 import Layout from "@/components/Layout";
 import { useAuth } from "@/hooks/useAuth";
 
 interface City {
   id: string;
   name: string;
-  region: string | null;
 }
 
 interface RouteResult {
@@ -27,6 +26,7 @@ interface RouteResult {
 
 const Search = () => {
   const [cities, setCities] = useState<City[]>([]);
+  const [citiesLoading, setCitiesLoading] = useState(true);
   const [departureCity, setDepartureCity] = useState("");
   const [arrivalCity, setArrivalCity] = useState("");
   const [routes, setRoutes] = useState<RouteResult[]>([]);
@@ -36,9 +36,21 @@ const Search = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    supabase.from("cities").select("*").order("name").then(({ data }) => {
-      if (data) setCities(data);
-    });
+    const loadCities = async () => {
+      setCitiesLoading(true);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data, error } = await supabase.from("cities").select("id, name").order("name");
+        if (data && data.length > 0) {
+          setCities(data);
+          setCitiesLoading(false);
+          return;
+        }
+        if (error) console.error("Cities load error:", error);
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      setCitiesLoading(false);
+    };
+    loadCities();
   }, []);
 
   const handleSearch = async () => {
@@ -49,12 +61,12 @@ const Search = () => {
       .select("id, departure_time, price, available_seats, company:companies(id, name), departure_city:cities!routes_departure_city_id_fkey(id, name), arrival_city:cities!routes_arrival_city_id_fkey(id, name)")
       .eq("is_active", true);
 
-    if (departureCity) query = query.eq("departure_city_id", departureCity);
-    if (arrivalCity) query = query.eq("arrival_city_id", arrivalCity);
+    if (departureCity && departureCity !== "all") query = query.eq("departure_city_id", departureCity);
+    if (arrivalCity && arrivalCity !== "all") query = query.eq("arrival_city_id", arrivalCity);
 
     const { data } = await query.order("departure_time");
     if (data) {
-      const mapped = data.map((r: any) => ({
+      setRoutes(data.map((r: any) => ({
         id: r.id,
         departure_time: r.departure_time,
         price: r.price,
@@ -62,8 +74,7 @@ const Search = () => {
         company: r.company,
         departure_city: r.departure_city,
         arrival_city: r.arrival_city,
-      }));
-      setRoutes(mapped);
+      })));
     }
     setLoading(false);
   };
@@ -81,40 +92,52 @@ const Search = () => {
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-3xl font-display font-bold mb-8">Rechercher un trajet</h1>
 
-        {/* Search form */}
         <Card className="mb-8">
           <CardContent className="pt-6">
             <div className="grid sm:grid-cols-3 gap-4 items-end">
               <div className="space-y-2">
                 <Label>Ville de départ</Label>
-                <Select value={departureCity} onValueChange={setDepartureCity}>
-                  <SelectTrigger><SelectValue placeholder="Toutes les villes" /></SelectTrigger>
-                  <SelectContent>
-                    {cities.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {citiesLoading ? (
+                  <div className="flex items-center gap-2 h-10 px-3 border rounded-md text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Chargement...
+                  </div>
+                ) : (
+                  <Select value={departureCity} onValueChange={setDepartureCity}>
+                    <SelectTrigger><SelectValue placeholder="Toutes les villes" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toutes les villes</SelectItem>
+                      {cities.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Destination</Label>
-                <Select value={arrivalCity} onValueChange={setArrivalCity}>
-                  <SelectTrigger><SelectValue placeholder="Toutes les villes" /></SelectTrigger>
-                  <SelectContent>
-                    {cities.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {citiesLoading ? (
+                  <div className="flex items-center gap-2 h-10 px-3 border rounded-md text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Chargement...
+                  </div>
+                ) : (
+                  <Select value={arrivalCity} onValueChange={setArrivalCity}>
+                    <SelectTrigger><SelectValue placeholder="Toutes les villes" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toutes les villes</SelectItem>
+                      {cities.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
-              <Button onClick={handleSearch} disabled={loading} className="h-10">
+              <Button onClick={handleSearch} disabled={loading || citiesLoading} className="h-10">
                 {loading ? "Recherche..." : "Rechercher"}
               </Button>
             </div>
           </CardContent>
         </Card>
 
-        {/* Results */}
         {searched && routes.length === 0 && (
           <p className="text-center text-muted-foreground py-12">Aucun trajet trouvé pour cette recherche.</p>
         )}
