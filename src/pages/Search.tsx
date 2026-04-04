@@ -61,8 +61,8 @@ const Search = () => {
       .select("id, departure_time, price, available_seats, company:companies(id, name), departure_city:cities!routes_departure_city_id_fkey(id, name), arrival_city:cities!routes_arrival_city_id_fkey(id, name)")
       .eq("is_active", true);
 
-    if (departureCity) query = query.eq("departure_city_id", departureCity);
-    if (arrivalCity) query = query.eq("arrival_city_id", arrivalCity);
+    if (departureCity && departureCity !== "all") query = query.eq("departure_city_id", departureCity);
+    if (arrivalCity && arrivalCity !== "all") query = query.eq("arrival_city_id", arrivalCity);
 
     const { data } = await query.order("departure_time");
     if (data) {
