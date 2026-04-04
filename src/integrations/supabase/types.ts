@@ -249,25 +249,31 @@ export type Database = {
       }
       tickets: {
         Row: {
+          expires_at: string | null
           id: string
           issued_at: string
           qr_code: string
           reservation_id: string
           ticket_number: string
+          used_at: string | null
         }
         Insert: {
+          expires_at?: string | null
           id?: string
           issued_at?: string
           qr_code: string
           reservation_id: string
           ticket_number: string
+          used_at?: string | null
         }
         Update: {
+          expires_at?: string | null
           id?: string
           issued_at?: string
           qr_code?: string
           reservation_id?: string
           ticket_number?: string
+          used_at?: string | null
         }
         Relationships: [
           {

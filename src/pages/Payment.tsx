@@ -52,11 +52,18 @@ const Payment = () => {
         company: res.route?.company?.name,
       });
 
+      // Ticket expires 24h after departure on travel_date
+      const travelDate = new Date(res.travel_date);
+      const [hours, minutes] = (res.route?.departure_time || "06:00").split(":").map(Number);
+      travelDate.setHours(hours, minutes, 0, 0);
+      const expiresAt = new Date(travelDate.getTime() + 24 * 60 * 60 * 1000);
+
       await supabase.from("tickets").insert({
         reservation_id: res.id,
         ticket_number: ticketNumber,
         qr_code: qrCode,
-      });
+        expires_at: expiresAt.toISOString(),
+      } as any);
     }
 
     setPaid(true);
