@@ -13,47 +13,60 @@ const Payment = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [reservation, setReservation] = useState<any>(null);
+  const [reservations, setReservations] = useState<any[]>([]);
   const [processing, setProcessing] = useState(false);
   const [paid, setPaid] = useState(false);
 
+  const reservationIds = reservationId?.split(",") || [];
+
   useEffect(() => {
-    if (!user || !reservationId) return;
+    if (!user || reservationIds.length === 0) return;
     supabase
       .from("reservations")
       .select("*, route:routes(*, company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name))")
-      .eq("id", reservationId)
-      .single()
-      .then(({ data }) => setReservation(data));
+      .in("id", reservationIds)
+      .then(({ data }) => {
+        if (data) setReservations(data);
+      });
   }, [reservationId, user]);
+
+  const totalPrice = reservations.reduce((sum, r) => sum + (r.total_price || 0), 0);
+  const firstRes = reservations[0];
 
   const simulatePayment = async () => {
     setProcessing(true);
-
-    // Simulate payment delay
     await new Promise((r) => setTimeout(r, 2000));
 
-    // Update reservation to paid
-    await supabase.from("reservations").update({ status: "paye" }).eq("id", reservationId);
+    // Update all reservations to paid and generate tickets
+    for (const res of reservations) {
+      await supabase.from("reservations").update({ status: "paye" }).eq("id", res.id);
 
-    // Generate ticket
-    const ticketNumber = `FC-${Date.now().toString(36).toUpperCase()}`;
-    const qrCode = `FASOCAR-${reservationId}-${ticketNumber}`;
+      const ticketNumber = `FC-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+      const qrCode = JSON.stringify({
+        ticket: ticketNumber,
+        reservation: res.id,
+        passenger: `${res.passenger_first_name} ${res.passenger_last_name}`,
+        route: `${res.route?.departure_city?.name} → ${res.route?.arrival_city?.name}`,
+        date: res.travel_date,
+        time: res.route?.departure_time?.slice(0, 5),
+        company: res.route?.company?.name,
+      });
 
-    await supabase.from("tickets").insert({
-      reservation_id: reservationId!,
-      ticket_number: ticketNumber,
-      qr_code: qrCode,
-    });
+      await supabase.from("tickets").insert({
+        reservation_id: res.id,
+        ticket_number: ticketNumber,
+        qr_code: qrCode,
+      });
+    }
 
     setPaid(true);
     setProcessing(false);
-    toast({ title: "Paiement réussi !", description: "Votre ticket est prêt." });
+    toast({ title: "Paiement réussi !", description: `${reservations.length} ticket(s) généré(s).` });
   };
 
-  if (!reservation) return <Layout><div className="container mx-auto px-4 py-12 text-center">Chargement...</div></Layout>;
+  if (reservations.length === 0) return <Layout><div className="container mx-auto px-4 py-12 text-center">Chargement...</div></Layout>;
 
-  const paymentLabel = reservation.payment_method === "orange_money" ? "Orange Money" : "Moov Money";
+  const paymentLabel = firstRes?.payment_method === "orange_money" ? "Orange Money" : "Moov Money";
 
   return (
     <Layout>
@@ -70,23 +83,33 @@ const Payment = () => {
               <div className="rounded-lg bg-muted p-4 space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Trajet</span>
-                  <span>{reservation.route?.departure_city?.name} → {reservation.route?.arrival_city?.name}</span>
+                  <span>{firstRes?.route?.departure_city?.name} → {firstRes?.route?.arrival_city?.name}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Compagnie</span>
-                  <span>{reservation.route?.company?.name}</span>
+                  <span>{firstRes?.route?.company?.name}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Date</span>
-                  <span>{new Date(reservation.travel_date).toLocaleDateString("fr-FR")}</span>
+                  <span>{new Date(firstRes?.travel_date).toLocaleDateString("fr-FR")}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Places</span>
-                  <span>{reservation.num_seats}</span>
+                  <span className="text-muted-foreground">Heure départ</span>
+                  <span>{firstRes?.route?.departure_time?.slice(0, 5)}</span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Passagers</span>
+                  <span>{reservations.length}</span>
+                </div>
+                {reservations.map((r, i) => (
+                  <div key={i} className="flex justify-between text-xs text-muted-foreground pl-2">
+                    <span>• {r.passenger_first_name} {r.passenger_last_name}</span>
+                    <span>{r.total_price?.toLocaleString()} FCFA</span>
+                  </div>
+                ))}
                 <div className="flex justify-between font-bold text-base border-t pt-2 mt-2">
                   <span>Total</span>
-                  <span>{reservation.total_price?.toLocaleString()} FCFA</span>
+                  <span>{totalPrice.toLocaleString()} FCFA</span>
                 </div>
               </div>
 
@@ -96,7 +119,7 @@ const Payment = () => {
               </div>
 
               <Button className="w-full" size="lg" onClick={simulatePayment} disabled={processing}>
-                {processing ? "Traitement en cours..." : `Payer ${reservation.total_price?.toLocaleString()} FCFA`}
+                {processing ? "Traitement en cours..." : `Payer ${totalPrice.toLocaleString()} FCFA`}
               </Button>
             </CardContent>
           </Card>
@@ -106,7 +129,7 @@ const Payment = () => {
               <CheckCircle className="h-16 w-16 text-primary mx-auto" />
               <div>
                 <h2 className="text-2xl font-display font-bold mb-2">Paiement confirmé !</h2>
-                <p className="text-muted-foreground">Votre ticket a été généré avec succès.</p>
+                <p className="text-muted-foreground">{reservations.length} ticket(s) généré(s) avec succès.</p>
               </div>
               <Button size="lg" onClick={() => navigate("/my-tickets")}>
                 Voir mes tickets

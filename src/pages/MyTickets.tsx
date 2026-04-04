@@ -9,6 +9,8 @@ import { Download, Bus, MapPin, ArrowRight, Calendar, Clock } from "lucide-react
 import Layout from "@/components/Layout";
 
 const TicketCard = ({ res }: { res: any }) => {
+  const departureTime = res.route?.departure_time?.slice(0, 5) || "";
+  
   const downloadTicket = useCallback(() => {
     if (!res.ticket) return;
     const printWindow = window.open("", "_blank");
@@ -16,25 +18,34 @@ const TicketCard = ({ res }: { res: any }) => {
     printWindow.document.write(`
       <html><head><title>Ticket ${res.ticket.ticket_number}</title>
       <style>
-        body{font-family:sans-serif;padding:20px;text-align:center;}
-        .ticket{max-width:400px;margin:auto;border:2px solid #333;padding:20px;border-radius:8px;}
-        .route{font-size:18px;font-weight:bold;margin:10px 0;}
-        .info{margin:5px 0;font-size:14px;}
-        svg{margin:15px auto;}
+        body{font-family:sans-serif;padding:20px;text-align:center;margin:0;}
+        .ticket{max-width:420px;margin:auto;border:2px solid #333;padding:24px;border-radius:12px;}
+        .logo{font-size:24px;font-weight:bold;color:#2d6a4f;margin-bottom:8px;}
+        .route{font-size:20px;font-weight:bold;margin:12px 0;}
+        .info{margin:6px 0;font-size:14px;color:#555;}
+        .info strong{color:#333;}
+        .qr-section{margin:20px auto;padding:16px;background:#f8f8f8;border-radius:8px;display:inline-block;}
+        .ticket-num{font-family:monospace;font-size:16px;font-weight:bold;margin-top:8px;color:#2d6a4f;}
+        .divider{border:none;border-top:1px dashed #ccc;margin:16px 0;}
+        .time-badge{display:inline-block;background:#2d6a4f;color:white;padding:4px 12px;border-radius:20px;font-size:14px;font-weight:bold;margin:8px 0;}
       </style>
       </head><body><div class="ticket">
-        <h2>🚌 FasoCar</h2>
+        <div class="logo">🚌 FasoCar</div>
         <p class="route">${res.route?.departure_city?.name} → ${res.route?.arrival_city?.name}</p>
-        <p class="info">Compagnie: ${res.route?.company?.name}</p>
-        <p class="info">Date: ${new Date(res.travel_date).toLocaleDateString("fr-FR")}</p>
-        <p class="info">Heure: ${res.route?.departure_time?.slice(0, 5)}</p>
-        <p class="info">Passager: ${res.passenger_first_name} ${res.passenger_last_name}</p>
-        <p class="info">Places: ${res.num_seats}</p>
-        <p class="info"><strong>${res.total_price?.toLocaleString()} FCFA</strong></p>
-        <p class="info">N° ${res.ticket.ticket_number}</p>
-        <div id="qr"></div>
+        <div class="time-badge">Départ: ${departureTime}</div>
+        <hr class="divider"/>
+        <p class="info"><strong>Compagnie:</strong> ${res.route?.company?.name}</p>
+        <p class="info"><strong>Date:</strong> ${new Date(res.travel_date).toLocaleDateString("fr-FR")}</p>
+        <p class="info"><strong>Passager:</strong> ${res.passenger_first_name} ${res.passenger_last_name}</p>
+        <p class="info"><strong>Téléphone:</strong> ${res.passenger_phone}</p>
+        <p class="info"><strong>Montant:</strong> ${res.total_price?.toLocaleString()} FCFA</p>
+        <hr class="divider"/>
+        <div class="qr-section">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(res.ticket.qr_code)}" width="180" height="180"/>
+          <div class="ticket-num">${res.ticket.ticket_number}</div>
+        </div>
       </div>
-      <script>window.print();</script></body></html>
+      <script>setTimeout(()=>window.print(),500);</script></body></html>
     `);
     printWindow.document.close();
   }, [res]);
@@ -66,7 +77,7 @@ const TicketCard = ({ res }: { res: any }) => {
             </div>
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center gap-1"><Calendar className="h-4 w-4" /> {new Date(res.travel_date).toLocaleDateString("fr-FR")}</span>
-              <span className="flex items-center gap-1"><Clock className="h-4 w-4" /> {res.route?.departure_time?.slice(0, 5)}</span>
+              <span className="flex items-center gap-1 font-semibold text-foreground"><Clock className="h-4 w-4 text-primary" /> Départ: {res.route?.departure_time?.slice(0, 5)}</span>
             </div>
             <div className="text-sm">
               <span className="text-muted-foreground">Passager: </span>
@@ -74,7 +85,7 @@ const TicketCard = ({ res }: { res: any }) => {
             </div>
             <div className="font-bold text-lg">{res.total_price?.toLocaleString()} FCFA</div>
             {res.ticket && (
-              <p className="text-xs text-muted-foreground">N° {res.ticket.ticket_number}</p>
+              <p className="text-xs text-muted-foreground font-mono">N° {res.ticket.ticket_number}</p>
             )}
           </div>
 
