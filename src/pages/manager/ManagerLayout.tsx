@@ -8,13 +8,14 @@ import {
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { NavLink } from "@/components/NavLink";
-import { LayoutDashboard, Route, Ticket, ArrowLeft } from "lucide-react";
+import { LayoutDashboard, Route, Ticket, ArrowLeft, ScanLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const managerItems = [
   { title: "Tableau de bord", url: "/manager", icon: LayoutDashboard },
   { title: "Trajets", url: "/manager/routes", icon: Route },
   { title: "Tickets vendus", url: "/manager/tickets", icon: Ticket },
+  { title: "Scanner QR", url: "/manager/scan", icon: ScanLine },
 ];
 
 const ManagerLayout = () => {

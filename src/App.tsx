@@ -54,6 +54,7 @@ const App = () => (
               <Route index element={<ManagerDashboard />} />
               <Route path="routes" element={<ManagerRoutes />} />
               <Route path="tickets" element={<ManagerTickets />} />
+              <Route path="scan" element={<ManagerScanQR />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
