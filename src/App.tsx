@@ -18,6 +18,7 @@ import AdminRoutes from "./pages/admin/AdminRoutes.tsx";
 import AdminReservations from "./pages/admin/AdminReservations.tsx";
 import AdminScanQR from "./pages/admin/AdminScanQR.tsx";
 import AdminManagers from "./pages/admin/AdminManagers.tsx";
+import AdminUsers from "./pages/admin/AdminUsers.tsx";
 import ManagerLayout from "./pages/manager/ManagerLayout.tsx";
 import ManagerDashboard from "./pages/manager/ManagerDashboard.tsx";
 import ManagerRoutes from "./pages/manager/ManagerRoutes.tsx";
