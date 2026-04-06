@@ -1,16 +1,32 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Users } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Users, ShieldCheck, Loader2 } from "lucide-react";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+
+const ROLES = [
+  { value: "user", label: "Utilisateur" },
+  { value: "manager", label: "Gérant" },
+  { value: "admin", label: "Administrateur" },
+] as const;
 
 const AdminUsers = () => {
   const [users, setUsers] = useState<any[]>([]);
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [newRole, setNewRole] = useState("");
+  const [changing, setChanging] = useState(false);
+  const { toast } = useToast();
+  const { user: currentUser } = useAuth();
 
   const loadUsers = useCallback(async () => {
-    // Get profiles + roles
     const [{ data: profiles }, { data: roles }] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("*"),
@@ -26,6 +42,11 @@ const AdminUsers = () => {
       setUsers(profiles.map((p: any) => ({
         ...p,
         roles: roleMap[p.user_id] || ["user"],
+        primaryRole: roleMap[p.user_id]?.includes("admin")
+          ? "admin"
+          : roleMap[p.user_id]?.includes("manager")
+            ? "manager"
+            : "user",
       })));
     }
   }, []);
@@ -33,6 +54,37 @@ const AdminUsers = () => {
   useEffect(() => { loadUsers(); }, [loadUsers]);
   useRealtimeTable("profiles", loadUsers);
   useRealtimeTable("user_roles", loadUsers);
+
+  const handleChangeRole = async () => {
+    if (!selectedUser || !newRole) return;
+    setChanging(true);
+
+    try {
+      // Delete existing roles for this user
+      await supabase.from("user_roles").delete().eq("user_id", selectedUser.user_id);
+
+      // Insert new role
+      const { error } = await supabase.from("user_roles").insert({
+        user_id: selectedUser.user_id,
+        role: newRole as any,
+      });
+
+      if (error) throw error;
+
+      // If demoting from manager, also remove from company_managers
+      if (selectedUser.primaryRole === "manager" && newRole !== "manager") {
+        await supabase.from("company_managers").delete().eq("user_id", selectedUser.user_id);
+      }
+
+      toast({ title: "Rôle modifié", description: `${selectedUser.first_name || "Utilisateur"} est maintenant ${ROLES.find(r => r.value === newRole)?.label}` });
+      setSelectedUser(null);
+      loadUsers();
+    } catch (e: any) {
+      toast({ title: "Erreur", description: e.message, variant: "destructive" });
+    }
+
+    setChanging(false);
+  };
 
   const roleBadge = (role: string) => {
     switch (role) {
@@ -61,13 +113,16 @@ const AdminUsers = () => {
                 <TableHead>Téléphone</TableHead>
                 <TableHead>Rôles</TableHead>
                 <TableHead>Inscrit le</TableHead>
+                <TableHead className="w-24">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {users.map((u) => (
                 <TableRow key={u.id}>
                   <TableCell className="font-medium">
-                    {u.first_name || u.last_name ? `${u.first_name} ${u.last_name}` : <span className="text-muted-foreground italic">Non renseigné</span>}
+                    {u.first_name || u.last_name
+                      ? `${u.first_name} ${u.last_name}`
+                      : <span className="text-muted-foreground italic">Non renseigné</span>}
                   </TableCell>
                   <TableCell>{u.phone || "—"}</TableCell>
                   <TableCell>
@@ -78,17 +133,64 @@ const AdminUsers = () => {
                   <TableCell className="text-muted-foreground text-sm">
                     {new Date(u.created_at).toLocaleDateString("fr-FR")}
                   </TableCell>
+                  <TableCell>
+                    {u.user_id !== currentUser?.id && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedUser(u);
+                          setNewRole(u.primaryRole);
+                        }}
+                      >
+                        <ShieldCheck className="h-4 w-4 mr-1" />
+                        Rôle
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
               {users.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Aucun utilisateur</TableCell>
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Aucun utilisateur</TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {/* Role change dialog */}
+      <Dialog open={!!selectedUser} onOpenChange={(open) => !open && setSelectedUser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Changer le rôle</DialogTitle>
+          </DialogHeader>
+          {selectedUser && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Utilisateur : <strong>{selectedUser.first_name} {selectedUser.last_name}</strong>
+              </p>
+              <div className="space-y-2">
+                <Label>Nouveau rôle</Label>
+                <Select value={newRole} onValueChange={setNewRole}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLES.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button className="w-full" onClick={handleChangeRole} disabled={changing || newRole === selectedUser.primaryRole}>
+                {changing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Modification...</> : "Confirmer le changement"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
