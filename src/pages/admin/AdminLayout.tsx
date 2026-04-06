@@ -13,7 +13,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { NavLink } from "@/components/NavLink";
-import { Building2, MapPin, Route, Ticket, LayoutDashboard, ArrowLeft, ScanLine, UserCog } from "lucide-react";
+import { Building2, MapPin, Route, Ticket, LayoutDashboard, ArrowLeft, ScanLine, UserCog, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const adminItems = [
