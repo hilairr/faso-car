@@ -4,11 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScanLine, CheckCircle2, XCircle, Search, AlertTriangle, Clock } from "lucide-react";
+import { ScanLine, CheckCircle2, XCircle, Search, AlertTriangle, Clock, Camera } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ScanTicketProps {
-  companyId?: string; // If set, only verify tickets for this company
+  companyId?: string;
 }
 
 const ScanTicket = ({ companyId }: ScanTicketProps) => {
@@ -16,52 +16,54 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
   const [manualCode, setManualCode] = useState("");
   const [result, setResult] = useState<any>(null);
   const [status, setStatus] = useState<"valid" | "used" | "expired" | "invalid" | null>(null);
+  const [loading, setLoading] = useState(false);
   const scannerRef = useRef<any>(null);
   const { toast } = useToast();
 
-  const verifyTicket = async (qrCode: string) => {
+  const verifyTicket = async (input: string) => {
     setResult(null);
     setStatus(null);
+    setLoading(true);
 
-    // Try parsing QR as JSON to extract ticket number
-    let searchCode = qrCode;
+    // Extract ticket number from QR JSON or use raw input
+    let ticketNumber = input.trim();
     try {
-      const parsed = JSON.parse(qrCode);
-      if (parsed.ticket) searchCode = parsed.ticket;
+      const parsed = JSON.parse(input);
+      if (parsed.ticket) ticketNumber = parsed.ticket;
     } catch {}
 
-    // Search by qr_code or ticket_number
-    let query = supabase
+    // Search by ticket_number OR qr_code
+    const { data: ticket, error } = await supabase
       .from("tickets")
-      .select("*, reservation:reservations(*, route:routes(departure_time, price, company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name)))")
-      .or(`qr_code.eq.${qrCode},ticket_number.eq.${searchCode}`)
+      .select("*, reservation:reservations(*, route:routes(departure_time, price, company_id, company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name)))")
+      .or(`ticket_number.eq.${ticketNumber},qr_code.eq.${input.trim()}`)
       .maybeSingle();
 
-    const { data: ticket, error: err } = await query;
+    setLoading(false);
 
-    if (err || !ticket) {
+    if (error || !ticket) {
       setStatus("invalid");
       return;
     }
 
-    // If manager, check that ticket belongs to their company
-    if (companyId && ticket.reservation?.route?.company?.name) {
-      const routeCompanyId = (ticket as any).reservation?.route?.company_id;
-      // We check via company name since we have it in the join
+    // If manager, check company match
+    if (companyId && ticket.reservation?.route?.company_id !== companyId) {
+      setStatus("invalid");
+      toast({ title: "Erreur", description: "Ce ticket n'appartient pas à votre société.", variant: "destructive" });
+      return;
     }
 
     setResult(ticket);
 
     // Check if already used
-    if ((ticket as any).used_at) {
+    if (ticket.used_at) {
       setStatus("used");
       return;
     }
 
     // Check if expired
-    if ((ticket as any).expires_at) {
-      const expiresAt = new Date((ticket as any).expires_at);
-      if (expiresAt < new Date()) {
+    if (ticket.expires_at) {
+      if (new Date(ticket.expires_at) < new Date()) {
         setStatus("expired");
         return;
       }
@@ -94,12 +96,23 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
 
     try {
       const { Html5Qrcode } = await import("html5-qrcode");
+      
+      // Get available cameras
+      const devices = await Html5Qrcode.getCameras();
+      if (!devices || devices.length === 0) {
+        throw new Error("No cameras found");
+      }
+
       const scanner = new Html5Qrcode("qr-reader");
       scannerRef.current = scanner;
 
+      // Prefer back camera
+      const backCamera = devices.find(d => d.label.toLowerCase().includes("back") || d.label.toLowerCase().includes("arrière") || d.label.toLowerCase().includes("environment"));
+      const cameraId = backCamera?.id || devices[devices.length - 1].id;
+
       await scanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        cameraId,
+        { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1 },
         (decodedText) => {
           scanner.stop().then(() => {
             setScanning(false);
@@ -108,9 +121,28 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
         },
         () => {}
       );
-    } catch {
-      toast({ title: "Erreur caméra", description: "Impossible d'accéder à la caméra", variant: "destructive" });
-      setScanning(false);
+    } catch (err: any) {
+      // Fallback: try with facingMode
+      try {
+        const { Html5Qrcode } = await import("html5-qrcode");
+        const scanner = new Html5Qrcode("qr-reader");
+        scannerRef.current = scanner;
+        
+        await scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          (decodedText) => {
+            scanner.stop().then(() => {
+              setScanning(false);
+              verifyTicket(decodedText);
+            });
+          },
+          () => {}
+        );
+      } catch {
+        toast({ title: "Erreur caméra", description: "Impossible d'accéder à la caméra. Vérifiez les permissions.", variant: "destructive" });
+        setScanning(false);
+      }
     }
   };
 
@@ -145,11 +177,11 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ScanLine className="h-5 w-5" /> Scanner un QR code
+              <Camera className="h-5 w-5" /> Scanner un QR code
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div id="qr-reader" className="mb-4 rounded-lg overflow-hidden" />
+            <div id="qr-reader" className="mb-4 rounded-lg overflow-hidden" style={{ minHeight: scanning ? 300 : 0 }} />
             {!scanning ? (
               <Button onClick={startScanner} className="w-full">
                 <ScanLine className="h-4 w-4 mr-2" /> Démarrer la caméra
@@ -172,12 +204,14 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
           <CardContent>
             <div className="flex gap-2">
               <Input
-                placeholder="Entrez le numéro de ticket (ex: FC-...)"
+                placeholder="Numéro de ticket (ex: FC-...)"
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleManualSearch()}
               />
-              <Button onClick={handleManualSearch}>Vérifier</Button>
+              <Button onClick={handleManualSearch} disabled={loading}>
+                {loading ? "..." : "Vérifier"}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -189,7 +223,7 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
               <XCircle className="h-8 w-8 text-destructive" />
               <div>
                 <p className="font-semibold text-destructive">Ticket invalide</p>
-                <p className="text-sm text-muted-foreground">Aucun ticket trouvé avec ce code.</p>
+                <p className="text-sm text-muted-foreground">Aucun ticket trouvé. Vérifiez le numéro ou le QR code.</p>
               </div>
             </CardContent>
           </Card>
@@ -197,14 +231,14 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
 
         {/* Already used */}
         {status === "used" && result && (
-          <Card className="border-warning">
+          <Card className="border-amber-500">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3 mb-4">
-                <AlertTriangle className="h-8 w-8 text-warning" />
+                <AlertTriangle className="h-8 w-8 text-amber-500" />
                 <div>
-                  <p className="font-semibold text-warning text-lg">Ticket déjà utilisé</p>
+                  <p className="font-semibold text-amber-600 text-lg">Ticket déjà utilisé</p>
                   <p className="text-sm text-muted-foreground">
-                    Ce ticket a déjà été scanné le {new Date((result as any).used_at).toLocaleString("fr-FR")}.
+                    Scanné le {new Date(result.used_at).toLocaleString("fr-FR")}
                   </p>
                 </div>
               </div>
@@ -226,7 +260,7 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
                     Votre ticket est expiré. Veuillez renouveler votre réservation.
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Expiré le {new Date((result as any).expires_at).toLocaleString("fr-FR")}
+                    Expiré le {new Date(result.expires_at).toLocaleString("fr-FR")}
                   </p>
                 </div>
               </div>
@@ -264,17 +298,17 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
 };
 
 const TicketDetails = ({ result }: { result: any }) => (
-  <div className="grid grid-cols-2 gap-3 text-sm">
+  <div className="grid grid-cols-2 gap-3 text-sm bg-muted/50 rounded-lg p-4">
     <div><span className="text-muted-foreground">Passager :</span><br /><strong>{result.reservation?.passenger_first_name} {result.reservation?.passenger_last_name}</strong></div>
     <div><span className="text-muted-foreground">Téléphone :</span><br /><strong>{result.reservation?.passenger_phone}</strong></div>
     <div><span className="text-muted-foreground">Trajet :</span><br /><strong>{result.reservation?.route?.departure_city?.name} → {result.reservation?.route?.arrival_city?.name}</strong></div>
     <div><span className="text-muted-foreground">Société :</span><br /><strong>{result.reservation?.route?.company?.name}</strong></div>
     <div><span className="text-muted-foreground">Date :</span><br /><strong>{result.reservation?.travel_date ? new Date(result.reservation.travel_date).toLocaleDateString("fr-FR") : "—"}</strong></div>
     <div><span className="text-muted-foreground">Heure :</span><br /><strong>{result.reservation?.route?.departure_time?.slice(0, 5)}</strong></div>
-    <div><span className="text-muted-foreground">Places :</span><br /><strong>1 (ticket individuel)</strong></div>
+    <div><span className="text-muted-foreground">N° Ticket :</span><br /><strong className="font-mono">{result.ticket_number}</strong></div>
     <div><span className="text-muted-foreground">Total :</span><br /><strong>{result.reservation?.total_price?.toLocaleString()} FCFA</strong></div>
-    {(result as any).expires_at && (
-      <div className="col-span-2"><span className="text-muted-foreground">Expire le :</span><br /><strong>{new Date((result as any).expires_at).toLocaleString("fr-FR")}</strong></div>
+    {result.expires_at && (
+      <div className="col-span-2"><span className="text-muted-foreground">Expire le :</span><br /><strong>{new Date(result.expires_at).toLocaleString("fr-FR")}</strong></div>
     )}
   </div>
 );
