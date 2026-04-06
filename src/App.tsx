@@ -50,6 +50,7 @@ const App = () => (
               <Route path="reservations" element={<AdminReservations />} />
               <Route path="scan" element={<AdminScanQR />} />
               <Route path="managers" element={<AdminManagers />} />
+              <Route path="users" element={<AdminUsers />} />
             </Route>
             <Route path="/manager" element={<ManagerLayout />}>
               <Route index element={<ManagerDashboard />} />

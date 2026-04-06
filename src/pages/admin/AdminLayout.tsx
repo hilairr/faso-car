@@ -24,6 +24,7 @@ const adminItems = [
   { title: "Réservations", url: "/admin/reservations", icon: Ticket },
   { title: "Scanner QR", url: "/admin/scan", icon: ScanLine },
   { title: "Gérants", url: "/admin/managers", icon: UserCog },
+  { title: "Utilisateurs", url: "/admin/users", icon: Users },
 ];
 
 const AdminLayout = () => {
