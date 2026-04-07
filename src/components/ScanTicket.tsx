@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScanLine, CheckCircle2, XCircle, Search, AlertTriangle, Clock, Camera } from "lucide-react";
@@ -25,14 +24,12 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
     setStatus(null);
     setLoading(true);
 
-    // Extract ticket number from QR JSON or use raw input
     let ticketNumber = input.trim();
     try {
       const parsed = JSON.parse(input);
       if (parsed.ticket) ticketNumber = parsed.ticket;
     } catch {}
 
-    // Search by ticket_number OR qr_code
     const { data: ticket, error } = await supabase
       .from("tickets")
       .select("*, reservation:reservations(*, route:routes(departure_time, price, company_id, company:companies(name), departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name)))")
@@ -46,7 +43,6 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
       return;
     }
 
-    // If manager, check company match
     if (companyId && ticket.reservation?.route?.company_id !== companyId) {
       setStatus("invalid");
       toast({ title: "Erreur", description: "Ce ticket n'appartient pas à votre société.", variant: "destructive" });
@@ -55,18 +51,14 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
 
     setResult(ticket);
 
-    // Check if already used
     if (ticket.used_at) {
       setStatus("used");
       return;
     }
 
-    // Check if expired
-    if (ticket.expires_at) {
-      if (new Date(ticket.expires_at) < new Date()) {
-        setStatus("expired");
-        return;
-      }
+    if (ticket.expires_at && new Date(ticket.expires_at) < new Date()) {
+      setStatus("expired");
+      return;
     }
 
     setStatus("valid");
@@ -96,17 +88,12 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
 
     try {
       const { Html5Qrcode } = await import("html5-qrcode");
-      
-      // Get available cameras
       const devices = await Html5Qrcode.getCameras();
-      if (!devices || devices.length === 0) {
-        throw new Error("No cameras found");
-      }
+      if (!devices || devices.length === 0) throw new Error("No cameras found");
 
       const scanner = new Html5Qrcode("qr-reader");
       scannerRef.current = scanner;
 
-      // Prefer back camera
       const backCamera = devices.find(d => d.label.toLowerCase().includes("back") || d.label.toLowerCase().includes("arrière") || d.label.toLowerCase().includes("environment"));
       const cameraId = backCamera?.id || devices[devices.length - 1].id;
 
@@ -114,28 +101,20 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
         cameraId,
         { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1 },
         (decodedText) => {
-          scanner.stop().then(() => {
-            setScanning(false);
-            verifyTicket(decodedText);
-          });
+          scanner.stop().then(() => { setScanning(false); verifyTicket(decodedText); });
         },
         () => {}
       );
-    } catch (err: any) {
-      // Fallback: try with facingMode
+    } catch {
       try {
         const { Html5Qrcode } = await import("html5-qrcode");
         const scanner = new Html5Qrcode("qr-reader");
         scannerRef.current = scanner;
-        
         await scanner.start(
           { facingMode: "environment" },
           { fps: 10, qrbox: { width: 250, height: 250 } },
           (decodedText) => {
-            scanner.stop().then(() => {
-              setScanning(false);
-              verifyTicket(decodedText);
-            });
+            scanner.stop().then(() => { setScanning(false); verifyTicket(decodedText); });
           },
           () => {}
         );
@@ -154,40 +133,34 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
     setScanning(false);
   };
 
-  useEffect(() => {
-    return () => { stopScanner(); };
-  }, []);
+  useEffect(() => { return () => { stopScanner(); }; }, []);
 
   const handleManualSearch = () => {
     if (manualCode.trim()) verifyTicket(manualCode.trim());
   };
 
-  const resetScan = () => {
-    setResult(null);
-    setStatus(null);
-    setManualCode("");
-  };
+  const resetScan = () => { setResult(null); setStatus(null); setManualCode(""); };
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <h1 className="text-3xl font-display font-bold mb-6">Vérification de ticket</h1>
+    <div className="max-w-md mx-auto">
+      <h1 className="text-2xl font-display font-bold mb-6">Vérification de ticket</h1>
 
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Scanner */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Camera className="h-5 w-5" /> Scanner un QR code
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Camera className="h-4 w-4" /> Scanner QR
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div id="qr-reader" className="mb-4 rounded-lg overflow-hidden" style={{ minHeight: scanning ? 300 : 0 }} />
+            <div id="qr-reader" className="mb-3 rounded-lg overflow-hidden" style={{ minHeight: scanning ? 280 : 0 }} />
             {!scanning ? (
-              <Button onClick={startScanner} className="w-full">
+              <Button onClick={startScanner} className="w-full" size="sm">
                 <ScanLine className="h-4 w-4 mr-2" /> Démarrer la caméra
               </Button>
             ) : (
-              <Button variant="destructive" onClick={stopScanner} className="w-full">
+              <Button variant="destructive" onClick={stopScanner} className="w-full" size="sm">
                 Arrêter la caméra
               </Button>
             )}
@@ -196,99 +169,79 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
 
         {/* Manual search */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Search className="h-5 w-5" /> Recherche manuelle
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="pt-4">
             <div className="flex gap-2">
               <Input
-                placeholder="Numéro de ticket (ex: FC-...)"
+                placeholder="N° ticket (ex: FC-...)"
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleManualSearch()}
+                className="text-sm"
               />
-              <Button onClick={handleManualSearch} disabled={loading}>
-                {loading ? "..." : "Vérifier"}
+              <Button onClick={handleManualSearch} disabled={loading} size="sm">
+                {loading ? "..." : <Search className="h-4 w-4" />}
               </Button>
             </div>
           </CardContent>
         </Card>
 
-        {/* Invalid */}
+        {/* Result: Invalid */}
         {status === "invalid" && (
-          <Card className="border-destructive">
-            <CardContent className="pt-6 flex items-center gap-3">
-              <XCircle className="h-8 w-8 text-destructive" />
-              <div>
-                <p className="font-semibold text-destructive">Ticket invalide</p>
-                <p className="text-sm text-muted-foreground">Aucun ticket trouvé. Vérifiez le numéro ou le QR code.</p>
-              </div>
+          <Card className="border-destructive bg-destructive/5">
+            <CardContent className="pt-4 pb-4 flex items-center gap-3">
+              <XCircle className="h-6 w-6 text-destructive shrink-0" />
+              <p className="font-semibold text-destructive text-sm">Ticket invalide — aucun ticket trouvé.</p>
             </CardContent>
           </Card>
         )}
 
-        {/* Already used */}
+        {/* Result: Used */}
         {status === "used" && result && (
-          <Card className="border-amber-500">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3 mb-4">
-                <AlertTriangle className="h-8 w-8 text-amber-500" />
+          <Card className="border-amber-500 bg-amber-50">
+            <CardContent className="pt-4 pb-4 space-y-2">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-6 w-6 text-amber-500 shrink-0" />
                 <div>
-                  <p className="font-semibold text-amber-600 text-lg">Ticket déjà utilisé</p>
-                  <p className="text-sm text-muted-foreground">
-                    Scanné le {new Date(result.used_at).toLocaleString("fr-FR")}
-                  </p>
+                  <p className="font-semibold text-amber-700 text-sm">Ticket déjà utilisé</p>
+                  <p className="text-xs text-muted-foreground">Utilisé le {new Date(result.used_at).toLocaleString("fr-FR")}</p>
                 </div>
               </div>
-              <TicketDetails result={result} />
-              <Button variant="outline" className="w-full mt-4" onClick={resetScan}>Nouveau scan</Button>
+              <p className="text-sm font-mono bg-background rounded px-2 py-1">N° {result.ticket_number}</p>
+              <Button variant="outline" size="sm" className="w-full" onClick={resetScan}>Nouveau scan</Button>
             </CardContent>
           </Card>
         )}
 
-        {/* Expired */}
+        {/* Result: Expired */}
         {status === "expired" && result && (
-          <Card className="border-destructive">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3 mb-4">
-                <Clock className="h-8 w-8 text-destructive" />
+          <Card className="border-destructive bg-destructive/5">
+            <CardContent className="pt-4 pb-4 space-y-2">
+              <div className="flex items-center gap-3">
+                <Clock className="h-6 w-6 text-destructive shrink-0" />
                 <div>
-                  <p className="font-semibold text-destructive text-lg">Ticket expiré</p>
-                  <p className="text-sm text-muted-foreground">
-                    Votre ticket est expiré. Veuillez renouveler votre réservation.
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Expiré le {new Date(result.expires_at).toLocaleString("fr-FR")}
-                  </p>
+                  <p className="font-semibold text-destructive text-sm">Ticket expiré</p>
+                  <p className="text-xs text-muted-foreground">Expiré le {new Date(result.expires_at).toLocaleString("fr-FR")}</p>
                 </div>
               </div>
-              <TicketDetails result={result} />
-              <Button variant="outline" className="w-full mt-4" onClick={resetScan}>Nouveau scan</Button>
+              <p className="text-sm font-mono bg-background rounded px-2 py-1">N° {result.ticket_number}</p>
+              <Button variant="outline" size="sm" className="w-full" onClick={resetScan}>Nouveau scan</Button>
             </CardContent>
           </Card>
         )}
 
-        {/* Valid */}
+        {/* Result: Valid */}
         {status === "valid" && result && (
-          <Card className="border-primary">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3 mb-4">
-                <CheckCircle2 className="h-8 w-8 text-primary" />
-                <div>
-                  <p className="font-semibold text-primary text-lg">Ticket valide ✓</p>
-                  <p className="text-sm text-muted-foreground">N° {result.ticket_number}</p>
-                </div>
-                <Badge className="ml-auto" variant={result.reservation?.status === "paye" ? "default" : "secondary"}>
-                  {result.reservation?.status === "paye" ? "Payé" : result.reservation?.status}
-                </Badge>
+          <Card className="border-primary bg-primary/5">
+            <CardContent className="pt-4 pb-4 space-y-2">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-6 w-6 text-primary shrink-0" />
+                <p className="font-semibold text-primary text-sm">Ticket valide ✓</p>
               </div>
-              <TicketDetails result={result} />
-              <Button className="w-full mt-4" onClick={markAsUsed}>
-                <CheckCircle2 className="h-4 w-4 mr-2" /> Valider et marquer comme utilisé
+              <p className="text-sm font-mono bg-background rounded px-2 py-1">N° {result.ticket_number}</p>
+              <Button className="w-full" size="sm" onClick={markAsUsed}>
+                <CheckCircle2 className="h-4 w-4 mr-2" /> Marquer comme utilisé
               </Button>
-              <Button variant="outline" className="w-full mt-2" onClick={resetScan}>Nouveau scan</Button>
+              <Button variant="outline" size="sm" className="w-full" onClick={resetScan}>Nouveau scan</Button>
             </CardContent>
           </Card>
         )}
@@ -296,21 +249,5 @@ const ScanTicket = ({ companyId }: ScanTicketProps) => {
     </div>
   );
 };
-
-const TicketDetails = ({ result }: { result: any }) => (
-  <div className="grid grid-cols-2 gap-3 text-sm bg-muted/50 rounded-lg p-4">
-    <div><span className="text-muted-foreground">Passager :</span><br /><strong>{result.reservation?.passenger_first_name} {result.reservation?.passenger_last_name}</strong></div>
-    <div><span className="text-muted-foreground">Téléphone :</span><br /><strong>{result.reservation?.passenger_phone}</strong></div>
-    <div><span className="text-muted-foreground">Trajet :</span><br /><strong>{result.reservation?.route?.departure_city?.name} → {result.reservation?.route?.arrival_city?.name}</strong></div>
-    <div><span className="text-muted-foreground">Société :</span><br /><strong>{result.reservation?.route?.company?.name}</strong></div>
-    <div><span className="text-muted-foreground">Date :</span><br /><strong>{result.reservation?.travel_date ? new Date(result.reservation.travel_date).toLocaleDateString("fr-FR") : "—"}</strong></div>
-    <div><span className="text-muted-foreground">Heure :</span><br /><strong>{result.reservation?.route?.departure_time?.slice(0, 5)}</strong></div>
-    <div><span className="text-muted-foreground">N° Ticket :</span><br /><strong className="font-mono">{result.ticket_number}</strong></div>
-    <div><span className="text-muted-foreground">Total :</span><br /><strong>{result.reservation?.total_price?.toLocaleString()} FCFA</strong></div>
-    {result.expires_at && (
-      <div className="col-span-2"><span className="text-muted-foreground">Expire le :</span><br /><strong>{new Date(result.expires_at).toLocaleString("fr-FR")}</strong></div>
-    )}
-  </div>
-);
 
 export default ScanTicket;
