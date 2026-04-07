@@ -5,9 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Users, ShieldCheck, Loader2 } from "lucide-react";
+import { Users, ShieldCheck, Loader2, Trash2 } from "lucide-react";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -21,8 +21,10 @@ const ROLES = [
 const AdminUsers = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [newRole, setNewRole] = useState("");
   const [changing, setChanging] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
 
@@ -60,18 +62,13 @@ const AdminUsers = () => {
     setChanging(true);
 
     try {
-      // Delete existing roles for this user
       await supabase.from("user_roles").delete().eq("user_id", selectedUser.user_id);
-
-      // Insert new role
       const { error } = await supabase.from("user_roles").insert({
         user_id: selectedUser.user_id,
         role: newRole as any,
       });
-
       if (error) throw error;
 
-      // If demoting from manager, also remove from company_managers
       if (selectedUser.primaryRole === "manager" && newRole !== "manager") {
         await supabase.from("company_managers").delete().eq("user_id", selectedUser.user_id);
       }
@@ -82,8 +79,27 @@ const AdminUsers = () => {
     } catch (e: any) {
       toast({ title: "Erreur", description: e.message, variant: "destructive" });
     }
-
     setChanging(false);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+
+    try {
+      // Remove roles, company_managers, then profile
+      await supabase.from("company_managers").delete().eq("user_id", deleteTarget.user_id);
+      await supabase.from("user_roles").delete().eq("user_id", deleteTarget.user_id);
+      const { error } = await supabase.from("profiles").delete().eq("user_id", deleteTarget.user_id);
+      if (error) throw error;
+
+      toast({ title: "Utilisateur supprimé", description: `${deleteTarget.first_name || "Utilisateur"} ${deleteTarget.last_name || ""} a été supprimé.` });
+      setDeleteTarget(null);
+      loadUsers();
+    } catch (e: any) {
+      toast({ title: "Erreur", description: e.message, variant: "destructive" });
+    }
+    setDeleting(false);
   };
 
   const roleBadge = (role: string) => {
@@ -113,7 +129,7 @@ const AdminUsers = () => {
                 <TableHead>Téléphone</TableHead>
                 <TableHead>Rôles</TableHead>
                 <TableHead>Inscrit le</TableHead>
-                <TableHead className="w-24">Actions</TableHead>
+                <TableHead className="w-32">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -135,17 +151,23 @@ const AdminUsers = () => {
                   </TableCell>
                   <TableCell>
                     {u.user_id !== currentUser?.id && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedUser(u);
-                          setNewRole(u.primaryRole);
-                        }}
-                      >
-                        <ShieldCheck className="h-4 w-4 mr-1" />
-                        Rôle
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => { setSelectedUser(u); setNewRole(u.primaryRole); }}
+                        >
+                          <ShieldCheck className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                          onClick={() => setDeleteTarget(u)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>
@@ -165,6 +187,7 @@ const AdminUsers = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Changer le rôle</DialogTitle>
+            <DialogDescription>Sélectionnez un nouveau rôle pour cet utilisateur.</DialogDescription>
           </DialogHeader>
           {selectedUser && (
             <div className="space-y-4">
@@ -174,9 +197,7 @@ const AdminUsers = () => {
               <div className="space-y-2">
                 <Label>Nouveau rôle</Label>
                 <Select value={newRole} onValueChange={setNewRole}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {ROLES.map((r) => (
                       <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
@@ -187,6 +208,32 @@ const AdminUsers = () => {
               <Button className="w-full" onClick={handleChangeRole} disabled={changing || newRole === selectedUser.primaryRole}>
                 {changing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Modification...</> : "Confirmer le changement"}
               </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Supprimer l'utilisateur</DialogTitle>
+            <DialogDescription>Cette action est irréversible.</DialogDescription>
+          </DialogHeader>
+          {deleteTarget && (
+            <div className="space-y-4">
+              <p className="text-sm">
+                Voulez-vous vraiment supprimer <strong>{deleteTarget.first_name} {deleteTarget.last_name}</strong> ?
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Son profil, ses rôles et ses associations de société seront supprimés.
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setDeleteTarget(null)}>Annuler</Button>
+                <Button variant="destructive" className="flex-1" onClick={handleDeleteUser} disabled={deleting}>
+                  {deleting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Suppression...</> : "Supprimer"}
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
