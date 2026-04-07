@@ -20,18 +20,21 @@ const ROLES = [
 
 const AdminUsers = () => {
   const [users, setUsers] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [newRole, setNewRole] = useState("");
+  const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [changing, setChanging] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
 
   const loadUsers = useCallback(async () => {
-    const [{ data: profiles }, { data: roles }] = await Promise.all([
+    const [{ data: profiles }, { data: roles }, { data: companyManagers }] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("*"),
+      supabase.from("company_managers").select("*"),
     ]);
 
     if (profiles && roles) {
@@ -39,6 +42,11 @@ const AdminUsers = () => {
       roles.forEach((r: any) => {
         if (!roleMap[r.user_id]) roleMap[r.user_id] = [];
         roleMap[r.user_id].push(r.role);
+      });
+
+      const managerMap: Record<string, string> = {};
+      companyManagers?.forEach((cm: any) => {
+        managerMap[cm.user_id] = cm.company_id;
       });
 
       setUsers(profiles.map((p: any) => ({
@@ -49,16 +57,26 @@ const AdminUsers = () => {
           : roleMap[p.user_id]?.includes("manager")
             ? "manager"
             : "user",
+        companyId: managerMap[p.user_id] || null,
       })));
     }
   }, []);
 
-  useEffect(() => { loadUsers(); }, [loadUsers]);
+  const loadCompanies = useCallback(async () => {
+    const { data } = await supabase.from("companies").select("id, name").eq("is_active", true).order("name");
+    if (data) setCompanies(data);
+  }, []);
+
+  useEffect(() => { loadUsers(); loadCompanies(); }, [loadUsers, loadCompanies]);
   useRealtimeTable("profiles", loadUsers);
   useRealtimeTable("user_roles", loadUsers);
 
   const handleChangeRole = async () => {
     if (!selectedUser || !newRole) return;
+    if (newRole === "manager" && !selectedCompanyId) {
+      toast({ title: "Erreur", description: "Veuillez sélectionner une société pour le gérant.", variant: "destructive" });
+      return;
+    }
     setChanging(true);
 
     try {
@@ -69,12 +87,18 @@ const AdminUsers = () => {
       });
       if (error) throw error;
 
-      if (selectedUser.primaryRole === "manager" && newRole !== "manager") {
-        await supabase.from("company_managers").delete().eq("user_id", selectedUser.user_id);
+      // Handle company_managers
+      await supabase.from("company_managers").delete().eq("user_id", selectedUser.user_id);
+      if (newRole === "manager" && selectedCompanyId) {
+        await supabase.from("company_managers").insert({
+          user_id: selectedUser.user_id,
+          company_id: selectedCompanyId,
+        });
       }
 
       toast({ title: "Rôle modifié", description: `${selectedUser.first_name || "Utilisateur"} est maintenant ${ROLES.find(r => r.value === newRole)?.label}` });
       setSelectedUser(null);
+      setSelectedCompanyId("");
       loadUsers();
     } catch (e: any) {
       toast({ title: "Erreur", description: e.message, variant: "destructive" });
@@ -87,7 +111,6 @@ const AdminUsers = () => {
     setDeleting(true);
 
     try {
-      // Remove roles, company_managers, then profile
       await supabase.from("company_managers").delete().eq("user_id", deleteTarget.user_id);
       await supabase.from("user_roles").delete().eq("user_id", deleteTarget.user_id);
       const { error } = await supabase.from("profiles").delete().eq("user_id", deleteTarget.user_id);
@@ -110,6 +133,11 @@ const AdminUsers = () => {
     }
   };
 
+  const getCompanyName = (companyId: string | null) => {
+    if (!companyId) return null;
+    return companies.find(c => c.id === companyId)?.name;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -128,6 +156,7 @@ const AdminUsers = () => {
                 <TableHead>Nom</TableHead>
                 <TableHead>Téléphone</TableHead>
                 <TableHead>Rôles</TableHead>
+                <TableHead>Société</TableHead>
                 <TableHead>Inscrit le</TableHead>
                 <TableHead className="w-32">Actions</TableHead>
               </TableRow>
@@ -146,6 +175,11 @@ const AdminUsers = () => {
                       {u.roles.map((r: string) => roleBadge(r))}
                     </div>
                   </TableCell>
+                  <TableCell className="text-sm">
+                    {u.primaryRole === "manager" && u.companyId
+                      ? <span className="font-medium">{getCompanyName(u.companyId)}</span>
+                      : <span className="text-muted-foreground">—</span>}
+                  </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     {new Date(u.created_at).toLocaleDateString("fr-FR")}
                   </TableCell>
@@ -155,7 +189,11 @@ const AdminUsers = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => { setSelectedUser(u); setNewRole(u.primaryRole); }}
+                          onClick={() => {
+                            setSelectedUser(u);
+                            setNewRole(u.primaryRole);
+                            setSelectedCompanyId(u.companyId || "");
+                          }}
                         >
                           <ShieldCheck className="h-4 w-4" />
                         </Button>
@@ -174,7 +212,7 @@ const AdminUsers = () => {
               ))}
               {users.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Aucun utilisateur</TableCell>
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Aucun utilisateur</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -205,7 +243,27 @@ const AdminUsers = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <Button className="w-full" onClick={handleChangeRole} disabled={changing || newRole === selectedUser.primaryRole}>
+
+              {newRole === "manager" && (
+                <div className="space-y-2">
+                  <Label>Société de transport</Label>
+                  <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choisir une société..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {companies.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!selectedCompanyId && (
+                    <p className="text-xs text-destructive">Vous devez associer le gérant à une société.</p>
+                  )}
+                </div>
+              )}
+
+              <Button className="w-full" onClick={handleChangeRole} disabled={changing || (newRole === selectedUser.primaryRole && (newRole !== "manager" || selectedCompanyId === (selectedUser.companyId || "")))}>
                 {changing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Modification...</> : "Confirmer le changement"}
               </Button>
             </div>
